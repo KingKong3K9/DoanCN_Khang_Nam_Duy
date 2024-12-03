@@ -326,40 +326,47 @@ namespace DoanCN_Khang_Nam_Duy.Models.DAL
 
         public List<TinTuyenDungRecommend> GetSuggestions(int userId)
         {
-            
+            // Lấy danh sách kỹ năng từ hồ sơ xin việc của người dùng
             var userSkills = dbContext.tbl_HoSoXinViec
-                .Where(hs => hs.FK_iMaUngVien == userId) 
+                .Where(hs => hs.FK_iMaUngVien == userId)
                 .Select(hs => hs.sKyNang)
                 .Distinct()
                 .ToList();
 
-            
             if (userSkills == null || !userSkills.Any())
             {
-                return new List<TinTuyenDungRecommend>(); 
+                return new List<TinTuyenDungRecommend>();
             }
 
-            
             var extractedSkills = ExtractSkills(userSkills);
 
+            if (extractedSkills == null || !extractedSkills.Any())
+            {
+                return new List<TinTuyenDungRecommend>();
+            }
+
+            // Bước 1: Truy vấn dữ liệu từ cơ sở dữ liệu
             var jobSuggestions = dbContext.tbl_TinTuyenDung
-                .Where(ttd => extractedSkills.Any(skill => ttd.sTenCongViec.ToLower().Contains(skill.ToLower())))
-                .ToList()
-                .Select(ttd => new TinTuyenDungRecommend()
-                {
-                    MaTTD = ttd.PK_iMaTTD,
-                    TenCongViec = ttd.sTenCongViec,
-                    TenNTD = GetAuthorByIdTinTD(ttd.PK_iMaTTD),
-                    AnhDaiDien = GetAnhDDByIdTinTD(ttd.PK_iMaTTD),
-                    DiaChi = ttd.sDiaChiLamViec,
-                    SoLuong = ttd.iSoLuong,
-                    MucLuong = GetMucLuongByMa(ttd.FK_sMaMucLuong),
-                    HanNop = ((DateTime)ttd.dHanNop).ToString("dd/MM/yyyy")
+                .Where(ttd => extractedSkills.Any(skill =>
+                    ttd.sTenCongViec.Contains(skill) ||
+                    ttd.sMoTaCongViec.Contains(skill)
+                ))
+                .ToList(); // Chỉ lấy dữ liệu từ DB
 
-                })
-                .ToList();
+            // Bước 2: Xử lý dữ liệu sau khi lấy từ DB
+            var result = jobSuggestions.Select(ttd => new TinTuyenDungRecommend()
+            {
+                MaTTD = ttd.PK_iMaTTD,
+                TenCongViec = ttd.sTenCongViec,
+                TenNTD = GetAuthorByIdTinTD(ttd.PK_iMaTTD), // Thực thi ngoài LINQ
+                AnhDaiDien = GetAnhDDByIdTinTD(ttd.PK_iMaTTD),
+                DiaChi = ttd.sDiaChiLamViec,
+                SoLuong = ttd.iSoLuong,
+                MucLuong = GetMucLuongByMa(ttd.FK_sMaMucLuong),
+                HanNop = ((DateTime)ttd.dHanNop).ToString("dd/MM/yyyy")
+            }).ToList();
 
-            return jobSuggestions; 
+            return result;
         }
 
 
@@ -372,21 +379,22 @@ namespace DoanCN_Khang_Nam_Duy.Models.DAL
             {
                 if (!string.IsNullOrEmpty(skill))
                 {
-                    
+                    // Xóa thẻ HTML và chuẩn hóa
                     string cleanedSkill = Regex.Replace(skill, "<.*?>", "").Trim();
 
-                    
+                    // Tách kỹ năng dựa trên các ký tự đặc biệt
                     var skills = cleanedSkill
-                        .Split(new[] { ',', ';', '\n', '\r', '-', '+' }, StringSplitOptions.RemoveEmptyEntries)
-                        .Select(s => s.Trim()) 
-                        .Where(s => !string.IsNullOrWhiteSpace(s)); 
+                        .Split(new[] { ',', ';', '\n', '\r', '-', '+', '|' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(s => s.Trim().ToLower()) // Chuyển về chữ thường để so sánh không phân biệt hoa thường
+                        .Where(s => !string.IsNullOrWhiteSpace(s));
 
                     allSkills.AddRange(skills);
                 }
             }
 
-            return allSkills.Distinct().ToList();
+            return allSkills.Distinct().ToList(); // Loại bỏ trùng lặp
         }
+
 
         public List<TinTuyenDungLuu> GetListSaveByIdUser(int id, string subject)
         {
